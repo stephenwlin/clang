@@ -168,10 +168,9 @@ public:
   /// \brief Returns true if the given instance method is one of the
   /// kinds that the ARM ABI says returns 'this'.
   bool HasThisReturn(GlobalDecl GD) const {
-    const CXXMethodDecl *MD = dyn_cast_or_null<CXXMethodDecl>(GD.getDecl());
-    if (!MD) return false;
-    return ((isa<CXXDestructorDecl>(MD) && GD.getDtorType() != Dtor_Deleting) ||
-            (isa<CXXConstructorDecl>(MD)));
+    return (isa<CXXConstructorDecl>(GD.getDecl()) || (
+              isa<CXXDestructorDecl>(GD.getDecl()) &&
+              GD.getDtorType() != Dtor_Deleting));
   }
 };
 }

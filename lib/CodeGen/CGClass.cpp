@@ -1112,7 +1112,7 @@ void CodeGenFunction::EmitCtorPrologue(const CXXConstructorDecl *CD,
 
   llvm::BasicBlock *BaseCtorContinueBB = 0;
   if (ClassDecl->getNumVBases() &&
-      !CGM.getTarget().getCXXABI().hasConstructorVariants()) {
+      !CGM.getContext().getTargetInfo().getCXXABI().hasConstructorVariants()) {
     // The ABIs that don't have constructor variants need to put a branch
     // before the virtual base initialization code.
     BaseCtorContinueBB = CGM.getCXXABI().EmitCtorCompleteObjectHandler(*this);
@@ -1668,8 +1668,7 @@ CodeGenFunction::EmitCXXConstructorCall(const CXXConstructorDecl *D,
   // Non-trivial constructors are handled in an ABI-specific manner.
   llvm::Value *Callee = CGM.getCXXABI().EmitConstructorCall(*this, D, Type,
                             ForVirtualBase, Delegating, This, ArgBeg, ArgEnd);
-  if (CGM.getCXXABI().HasThisReturn(CurGD) &&
-      CGM.getCXXABI().HasThisReturn(GlobalDecl(D, Type)))
+  if (CGM.getCXXABI().HasThisReturn(GlobalDecl(D, Type)))
      CalleeWithThisReturn = Callee;
 }
 
@@ -1762,8 +1761,7 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
   llvm::Value *Callee = CGM.GetAddrOfCXXConstructor(Ctor, CtorType);
   EmitCall(CGM.getTypes().arrangeCXXConstructorDeclaration(Ctor, CtorType),
            Callee, ReturnValueSlot(), DelegateArgs, Ctor);
-  if (CGM.getCXXABI().HasThisReturn(CurGD) &&
-      CGM.getCXXABI().HasThisReturn(GlobalDecl(Ctor, CtorType)))
+  if (CGM.getCXXABI().HasThisReturn(GlobalDecl(Ctor, CtorType)))
      CalleeWithThisReturn = Callee;
 }
 
@@ -1831,8 +1829,7 @@ void CodeGenFunction::EmitCXXDestructorCall(const CXXDestructorDecl *DD,
   EmitCXXMemberCall(DD, SourceLocation(), Callee, ReturnValueSlot(), This,
                     VTT, getContext().getPointerType(getContext().VoidPtrTy),
                     0, 0);
-  if (CGM.getCXXABI().HasThisReturn(CurGD) &&
-      CGM.getCXXABI().HasThisReturn(GlobalDecl(DD, Type)))
+  if (CGM.getCXXABI().HasThisReturn(GlobalDecl(DD, Type)))
      CalleeWithThisReturn = Callee;
 }
 

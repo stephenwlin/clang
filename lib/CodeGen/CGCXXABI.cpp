@@ -249,7 +249,7 @@ llvm::Constant *CGCXXABI::getMemberPointerAdjustment(const CastExpr *E) {
 
 llvm::BasicBlock *CGCXXABI::EmitCtorCompleteObjectHandler(
                                                          CodeGenFunction &CGF) {
-  if (CGM.getTarget().getCXXABI().hasConstructorVariants())
+  if (CGM.getContext().getTargetInfo().getCXXABI().hasConstructorVariants())
     llvm_unreachable("shouldn't be called in this ABI");
 
   ErrorUnsupportedABI(CGF, "complete object detection in ctor");

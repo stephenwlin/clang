@@ -491,7 +491,6 @@ public:
   VTableContext &getVTableContext() { return VTables.getVTableContext(); }
   DiagnosticsEngine &getDiags() const { return Diags; }
   const llvm::DataLayout &getDataLayout() const { return TheDataLayout; }
-  const TargetInfo &getTarget() const { return Context.getTargetInfo(); }
   llvm::LLVMContext &getLLVMContext() { return VMContext; }
   const TargetCodeGenInfo &getTargetCodeGenInfo();
   bool isTargetDarwin() const;

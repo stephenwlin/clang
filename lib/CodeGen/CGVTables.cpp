@@ -813,7 +813,7 @@ CodeGenVTables::GenerateClassData(const CXXRecordDecl *RD) {
   EmitVTableDefinition(VTable, Linkage, RD);
 
   if (RD->getNumVBases()) {
-    if (!CGM.getTarget().getCXXABI().isMicrosoft()) {
+    if (!CGM.getContext().getTargetInfo().getCXXABI().isMicrosoft()) {
       llvm::GlobalVariable *VTT = GetAddrOfVTT(RD);
       EmitVTTDefinition(VTT, Linkage, RD);
     } else {

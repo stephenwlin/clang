@@ -61,7 +61,6 @@ class CodeGenTypes {
 public:
   // Some of this stuff should probably be left on the CGM.
   ASTContext &Context;
-  const TargetInfo &Target;
   llvm::Module &TheModule;
   const llvm::DataLayout &TheDataLayout;
   const ABIInfo &TheABIInfo;
@@ -111,7 +110,6 @@ public:
   ~CodeGenTypes();
 
   const llvm::DataLayout &getDataLayout() const { return TheDataLayout; }
-  const TargetInfo &getTarget() const { return Target; }
   ASTContext &getContext() const { return Context; }
   const ABIInfo &getABIInfo() const { return TheABIInfo; }
   const CodeGenOptions &getCodeGenOpts() const { return CodeGenOpts; }

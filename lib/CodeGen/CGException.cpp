@@ -1511,7 +1511,7 @@ void CodeGenFunction::FinallyInfo::exit(CodeGenFunction &CGF) {
 static bool useClangCallTerminate(CodeGenModule &CGM) {
   // Only do this for Itanium-family ABIs in C++ mode.
   return (CGM.getLangOpts().CPlusPlus &&
-          CGM.getTarget().getCXXABI().isItaniumFamily());
+          CGM.getContext().getTargetInfo().getCXXABI().isItaniumFamily());
 }
 
 /// Get or define the following function:

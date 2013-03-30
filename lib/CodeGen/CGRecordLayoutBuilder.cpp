@@ -390,7 +390,7 @@ bool CGRecordLayoutBuilder::LayoutField(const FieldDecl *D,
 
   CheckZeroInitializable(D->getType());
 
-  assert(fieldOffset % Types.getTarget().getCharWidth() == 0
+  assert(fieldOffset % Types.getContext().getTargetInfo().getCharWidth() == 0
          && "field offset is not on a byte boundary!");
   CharUnits fieldOffsetInBytes
     = Types.getContext().toCharUnitsFromBits(fieldOffset);

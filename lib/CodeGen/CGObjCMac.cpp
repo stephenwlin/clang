@@ -4344,7 +4344,7 @@ void CGObjCCommonMac::EmitImageInfo() {
   }
 
   // Indicate whether we're compiling this to run on a simulator.
-  const llvm::Triple &Triple = CGM.getTarget().getTriple();
+  const llvm::Triple &Triple = CGM.getContext().getTargetInfo().getTriple();
   if (Triple.getOS() == llvm::Triple::IOS &&
       (Triple.getArch() == llvm::Triple::x86 ||
        Triple.getArch() == llvm::Triple::x86_64))
