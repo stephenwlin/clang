@@ -314,11 +314,12 @@ void CodeGenFunction::GenerateThunk(llvm::Function *Fn,
                 SourceLocation());
 
   CGM.getCXXABI().EmitInstanceFunctionProlog(*this);
-  CXXThisValue = CXXABIThisValue;
+  CXXThisAddrValue = CXXABIThisAddrValue;
 
   // Adjust the 'this' pointer if necessary.
+  llvm::Value *ThisPtr = EmitLoadOfCXXThis();
   llvm::Value *AdjustedThisPtr = 
-    PerformTypeAdjustment(*this, LoadCXXThis(), 
+    PerformTypeAdjustment(*this, ThisPtr, 
                           Thunk.This.NonVirtual, 
                           Thunk.This.VCallOffsetOffset,
                           /*IsReturnAdjustment*/false);

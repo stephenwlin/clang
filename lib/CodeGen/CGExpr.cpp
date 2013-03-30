@@ -1808,7 +1808,8 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
     if (!V) {
       if (FieldDecl *FD = LambdaCaptureFields.lookup(VD)) {
         QualType LambdaTagType = getContext().getTagDeclType(FD->getParent());
-        LValue LambdaLV = MakeNaturalAlignAddrLValue(CXXABIThisValue,
+        llvm::Value *ABIThisPtr = Builder.CreateLoad(CXXABIThisAddrValue);
+        LValue LambdaLV = MakeNaturalAlignAddrLValue(ABIThisPtr,
                                                      LambdaTagType);
         return EmitLValueForField(LambdaLV, FD);
       }

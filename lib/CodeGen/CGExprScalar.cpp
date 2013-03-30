@@ -345,7 +345,7 @@ public:
     return Visit(DAE->getExpr());
   }
   Value *VisitCXXThisExpr(CXXThisExpr *TE) {
-    return CGF.LoadCXXThis();
+    return CGF.EmitLoadOfCXXThis();
   }
 
   Value *VisitExprWithCleanups(ExprWithCleanups *E) {

@@ -740,7 +740,8 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
     llvm::Value *addr = Builder.CreateStructGEP(blockAddr,
                                                 blockInfo.CXXThisIndex,
                                                 "block.captured-this.addr");
-    Builder.CreateStore(LoadCXXThis(), addr);
+    llvm::Value *ThisPtr = EmitLoadOfCXXThis();
+    Builder.CreateStore(ThisPtr, addr);
   }
 
   // Next, captured variables.
@@ -1160,10 +1161,9 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
   // If we have a C++ 'this' reference, go ahead and force it into
   // existence now.
   if (blockDecl->capturesCXXThis()) {
-    llvm::Value *addr = Builder.CreateStructGEP(BlockPointer,
-                                                blockInfo.CXXThisIndex,
-                                                "block.captured-this");
-    CXXThisValue = Builder.CreateLoad(addr, "this");
+    CXXThisAddrValue = Builder.CreateStructGEP(BlockPointer,
+                                               blockInfo.CXXThisIndex,
+                                               "block.captured-this.addr");
   }
 
   // LoadObjCSelf() expects there to be an entry for 'self' in LocalDeclMap;

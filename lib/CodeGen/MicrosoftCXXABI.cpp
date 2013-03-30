@@ -55,13 +55,14 @@ public:
 
   void EmitInstanceFunctionProlog(CodeGenFunction &CGF);
 
-  llvm::Value *EmitConstructorCall(CodeGenFunction &CGF,
-                           const CXXConstructorDecl *D,
-                           CXXCtorType Type, bool ForVirtualBase,
-                           bool Delegating,
-                           llvm::Value *This,
-                           CallExpr::const_arg_iterator ArgBeg,
-                           CallExpr::const_arg_iterator ArgEnd);
+  RValue EmitConstructorCall(CodeGenFunction &CGF,
+                             const CXXConstructorDecl *D,
+                             CXXCtorType Type,
+                             bool ForVirtualBase, bool Delegating,
+                             ReturnValueSlot ReturnValue,
+                             llvm::Value *This,
+                             CallExpr::const_arg_iterator ArgBeg,
+                             CallExpr::const_arg_iterator ArgEnd);
 
   RValue EmitVirtualDestructorCall(CodeGenFunction &CGF,
                                    const CXXDestructorDecl *Dtor,
@@ -242,7 +243,9 @@ void MicrosoftCXXABI::BuildInstanceFunctionParams(CodeGenFunction &CGF,
 void MicrosoftCXXABI::EmitInstanceFunctionProlog(CodeGenFunction &CGF) {
   EmitThisParam(CGF);
   if (needThisReturn(CGF.CurGD)) {
-    CGF.Builder.CreateStore(getThisValue(CGF), CGF.ReturnValue);
+    /// This loads the ABI 'this' rather than the semantic 'this'
+    llvm::Value *This = CGF.Builder.CreateLoad(getThisAddrValue(CGF), "this");
+    CGF.Builder.CreateStore(This, CGF.ReturnValue);
   }
 
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(CGF.CurGD.getDecl());
@@ -265,11 +268,13 @@ void MicrosoftCXXABI::EmitInstanceFunctionProlog(CodeGenFunction &CGF) {
   }
 }
 
-llvm::Value *MicrosoftCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
-                                          const CXXConstructorDecl *D,
-                                          CXXCtorType Type, bool ForVirtualBase,
-                                          bool Delegating,
-                                          llvm::Value *This,
+RValue MicrosoftCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
+                                            const CXXConstructorDecl *D,
+                                            CXXCtorType Type, 
+                                            bool ForVirtualBase,
+                                            bool Delegating,
+                                            ReturnValueSlot ReturnValue,
+                                            llvm::Value *This,
                                           CallExpr::const_arg_iterator ArgBeg,
                                           CallExpr::const_arg_iterator ArgEnd) {
   assert(Type == Ctor_Complete || Type == Ctor_Base);
@@ -283,10 +288,9 @@ llvm::Value *MicrosoftCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
   }
 
   // FIXME: Provide a source location here.
-  CGF.EmitCXXMemberCall(D, SourceLocation(), Callee, ReturnValueSlot(), This,
-                        ImplicitParam, ImplicitParamTy,
-                        ArgBeg, ArgEnd);
-  return Callee;
+  return CGF.EmitCXXMemberCall(D, SourceLocation(), Callee, ReturnValue,
+                               This, ImplicitParam, ImplicitParamTy,
+                               ArgBeg, ArgEnd);
 }
 
 RValue MicrosoftCXXABI::EmitVirtualDestructorCall(CodeGenFunction &CGF,

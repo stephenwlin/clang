@@ -1148,10 +1148,6 @@ private:
   CGDebugInfo *DebugInfo;
   bool DisableDebugInfo;
 
-  /// If the current function returns 'this', use the field to keep track of
-  /// the callee that returns 'this'.
-  llvm::Value *CalleeWithThisReturn;
-
   /// DidCallStackSave - Whether llvm.stacksave has been called. Used to avoid
   /// calling llvm.stacksave for multiple VLAs in the same scope.
   bool DidCallStackSave;
@@ -1209,8 +1205,10 @@ private:
   /// CXXThisDecl - When generating code for a C++ member function,
   /// this will hold the implicit 'this' declaration.
   ImplicitParamDecl *CXXABIThisDecl;
-  llvm::Value *CXXABIThisValue;
-  llvm::Value *CXXThisValue;
+  llvm::Value *CXXABIThisAddrValue;
+  llvm::Value *CXXThisAddrValue;
+  CharUnits CXXThisAddrAlignment;
+  llvm::MDNode *CXXThisAddrTBAAInfo;
 
   /// CXXStructorImplicitParamDecl - When generating code for a constructor or
   /// destructor, this will hold the implicit argument (e.g. VTT).
@@ -1424,8 +1422,6 @@ public:
     return BlockPointer;
   }
 
-  void AllocateBlockCXXThisPointer(const CXXThisExpr *E);
-  void AllocateBlockDecl(const DeclRefExpr *E);
   llvm::Value *GetAddrOfBlockDecl(const VarDecl *var, bool ByRef);
   llvm::Type *BuildByRefType(const VarDecl *var);
 
@@ -1814,11 +1810,23 @@ public:
   std::pair<llvm::Value*,QualType> getVLASize(const VariableArrayType *vla);
   std::pair<llvm::Value*,QualType> getVLASize(QualType vla);
 
-  /// LoadCXXThis - Load the value of 'this'. This function is only valid while
-  /// generating code for an C++ member function.
-  llvm::Value *LoadCXXThis() {
-    assert(CXXThisValue && "no 'this' value for this function");
-    return CXXThisValue;
+  /// EmitLoadOfCXXThis - Load the value of 'this'. This function is only valid
+  /// while generating code for an C++ member function.
+  llvm::Value *EmitLoadOfCXXThis() {
+    assert(CXXThisAddrValue && "no 'this.addr' value for this function");
+    llvm::LoadInst *Load = Builder.CreateLoad(CXXThisAddrValue);
+    if (!CXXThisAddrAlignment.isZero())
+      Load->setAlignment(CXXThisAddrAlignment.getQuantity());
+    if (CXXThisAddrTBAAInfo)
+      CGM.DecorateInstruction(Load, CXXThisAddrTBAAInfo);
+    return Load;
+  }
+
+  /// EmitStoreOfCXXThis - Load the value of 'this'. This function is only valid
+  /// while generating code for an C++ member function.
+  void EmitStoreOfCXXThis(llvm::Value *Value) {
+    assert(CXXThisAddrValue && "no 'this.addr' value for this function");
+    Builder.CreateStore(Value, CXXThisAddrValue);
   }
 
   /// LoadCXXVTT - Load the VTT parameter to base constructors/destructors have

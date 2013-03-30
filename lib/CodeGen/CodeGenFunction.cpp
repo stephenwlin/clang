@@ -42,10 +42,10 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
     AutoreleaseResult(false), BlockInfo(0), BlockPointer(0),
     LambdaThisCaptureField(0), NormalCleanupDest(0), NextCleanupDestIndex(1),
     FirstBlockInfo(0), EHResumeBlock(0), ExceptionSlot(0), EHSelectorSlot(0),
-    DebugInfo(0), DisableDebugInfo(false), CalleeWithThisReturn(0),
-    DidCallStackSave(false),
+    DebugInfo(0), DisableDebugInfo(false), DidCallStackSave(false),
     IndirectBranch(0), SwitchInsn(0), CaseRangeBlock(0), UnreachableBlock(0),
-    CXXABIThisDecl(0), CXXABIThisValue(0), CXXThisValue(0),
+    CXXABIThisDecl(0), CXXABIThisAddrValue(0), CXXThisAddrValue(0),
+    CXXThisAddrAlignment(CharUnits::Zero()), CXXThisAddrTBAAInfo(0),
     CXXStructorImplicitParamDecl(0), CXXStructorImplicitParamValue(0),
     OutermostConditional(0), CurLexicalScope(0), TerminateLandingPad(0),
     TerminateHandler(0), TrapBB(0) {
@@ -557,17 +557,20 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
         // If this lambda captures this, load it.
         QualType LambdaTagType =
             getContext().getTagDeclType(LambdaThisCaptureField->getParent());
-        LValue LambdaLV = MakeNaturalAlignAddrLValue(CXXABIThisValue,
+        llvm::Value *ABIThisPtr = Builder.CreateLoad(CXXABIThisAddrValue);
+        LValue LambdaLV = MakeNaturalAlignAddrLValue(ABIThisPtr,
                                                      LambdaTagType);
         LValue ThisLValue = EmitLValueForField(LambdaLV,
                                                LambdaThisCaptureField);
-        CXXThisValue = EmitLoadOfLValue(ThisLValue).getScalarVal();
+        CXXThisAddrValue = ThisLValue.getAddress();
+        CXXThisAddrAlignment = ThisLValue.getAlignment();
+        CXXThisAddrTBAAInfo = ThisLValue.getTBAAInfo();
       }
     } else {
       // Not in a lambda; just use 'this' from the method.
       // FIXME: Should we generate a new load for each use of 'this'?  The
       // fast register allocator would be happier...
-      CXXThisValue = CXXABIThisValue;
+      CXXThisAddrValue = CXXABIThisAddrValue;
     }
   }
 
@@ -644,10 +647,6 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   SourceRange BodyRange;
   if (Stmt *Body = FD->getBody()) BodyRange = Body->getSourceRange();
 
-  // CalleeWithThisReturn keeps track of the last callee inside this function
-  // that returns 'this'. Before starting the function, we set it to null.
-  CalleeWithThisReturn = 0;
-
   // Emit the standard function prologue.
   StartFunction(GD, ResTy, Fn, FnInfo, Args, BodyRange.getBegin());
 
@@ -699,9 +698,6 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
 
   // Emit the standard function epilogue.
   FinishFunction(BodyRange.getEnd());
-  // CalleeWithThisReturn keeps track of the last callee inside this function
-  // that returns 'this'. After finishing the function, we set it to null.
-  CalleeWithThisReturn = 0;
 
   // If we haven't marked the function nothrow through other means, do
   // a quick pass now to see if we can.

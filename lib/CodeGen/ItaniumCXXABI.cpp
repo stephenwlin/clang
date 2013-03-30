@@ -100,13 +100,14 @@ public:
 
   void EmitInstanceFunctionProlog(CodeGenFunction &CGF);
 
-  llvm::Value *EmitConstructorCall(CodeGenFunction &CGF,
-                           const CXXConstructorDecl *D,
-                           CXXCtorType Type, bool ForVirtualBase,
-                           bool Delegating,
-                           llvm::Value *This,
-                           CallExpr::const_arg_iterator ArgBeg,
-                           CallExpr::const_arg_iterator ArgEnd);
+  RValue EmitConstructorCall(CodeGenFunction &CGF,
+                             const CXXConstructorDecl *D,
+                             CXXCtorType Type,
+                             bool ForVirtualBase, bool Delegating,
+                             ReturnValueSlot ReturnValue,
+                             llvm::Value *This,
+                             CallExpr::const_arg_iterator ArgBeg,
+                             CallExpr::const_arg_iterator ArgEnd);
 
   RValue EmitVirtualDestructorCall(CodeGenFunction &CGF,
                                    const CXXDestructorDecl *Dtor,
@@ -168,10 +169,9 @@ public:
   /// \brief Returns true if the given instance method is one of the
   /// kinds that the ARM ABI says returns 'this'.
   bool HasThisReturn(GlobalDecl GD) const {
-    const CXXMethodDecl *MD = dyn_cast_or_null<CXXMethodDecl>(GD.getDecl());
-    if (!MD) return false;
-    return ((isa<CXXDestructorDecl>(MD) && GD.getDtorType() != Dtor_Deleting) ||
-            (isa<CXXConstructorDecl>(MD)));
+    return (isa<CXXConstructorDecl>(GD.getDecl()) || (
+              isa<CXXDestructorDecl>(GD.getDecl()) &&
+              GD.getDtorType() != Dtor_Deleting));
   }
 };
 }
@@ -814,14 +814,18 @@ void ARMCXXABI::EmitInstanceFunctionProlog(CodeGenFunction &CGF) {
 
   /// Initialize the return slot to 'this' at the start of the
   /// function.
-  if (HasThisReturn(CGF.CurGD))
-    CGF.Builder.CreateStore(getThisValue(CGF), CGF.ReturnValue);
+  if (HasThisReturn(CGF.CurGD)) {
+    /// This loads the ABI 'this' rather than the semantic 'this'
+    llvm::Value *This = CGF.Builder.CreateLoad(getThisAddrValue(CGF), "this");
+    CGF.Builder.CreateStore(This, CGF.ReturnValue);
+  }
 }
 
-llvm::Value *ItaniumCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
+RValue ItaniumCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
                                         const CXXConstructorDecl *D,
-                                        CXXCtorType Type, bool ForVirtualBase,
-                                        bool Delegating,
+                                        CXXCtorType Type,
+                                        bool ForVirtualBase, bool Delegating,
+                                        ReturnValueSlot ReturnValue,
                                         llvm::Value *This,
                                         CallExpr::const_arg_iterator ArgBeg,
                                         CallExpr::const_arg_iterator ArgEnd) {
@@ -831,9 +835,8 @@ llvm::Value *ItaniumCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
   llvm::Value *Callee = CGM.GetAddrOfCXXConstructor(D, Type);
 
   // FIXME: Provide a source location here.
-  CGF.EmitCXXMemberCall(D, SourceLocation(), Callee, ReturnValueSlot(), This,
-                        VTT, VTTTy, ArgBeg, ArgEnd);
-  return Callee;
+  return CGF.EmitCXXMemberCall(D, SourceLocation(), Callee, ReturnValue,
+                               This, VTT, VTTTy, ArgBeg, ArgEnd);
 }
 
 RValue ItaniumCXXABI::EmitVirtualDestructorCall(CodeGenFunction &CGF,
