@@ -50,6 +50,9 @@ protected:
   ImplicitParamDecl *&getThisDecl(CodeGenFunction &CGF) {
     return CGF.CXXABIThisDecl;
   }
+  llvm::Value *&getThisAddrValue(CodeGenFunction &CGF) {
+    return CGF.CXXABIThisAddrValue;
+  }
   llvm::Value *&getThisValue(CodeGenFunction &CGF) {
     return CGF.CXXABIThisValue;
   }
@@ -220,13 +223,14 @@ public:
   virtual void EmitInstanceFunctionProlog(CodeGenFunction &CGF) = 0;
 
   /// Emit the constructor call. Return the function that is called.
-  virtual llvm::Value *EmitConstructorCall(CodeGenFunction &CGF,
-                                   const CXXConstructorDecl *D,
-                                   CXXCtorType Type, bool ForVirtualBase,
-                                   bool Delegating,
-                                   llvm::Value *This,
-                                   CallExpr::const_arg_iterator ArgBeg,
-                                   CallExpr::const_arg_iterator ArgEnd) = 0;
+  virtual RValue EmitConstructorCall(CodeGenFunction &CGF,
+                                     const CXXConstructorDecl *D,
+                                     CXXCtorType Type,
+                                     bool ForVirtualBase, bool Delegating,
+                                     ReturnValueSlot ReturnValue,
+                                     llvm::Value *This,
+                                     CallExpr::const_arg_iterator ArgBeg,
+                                     CallExpr::const_arg_iterator ArgEnd) = 0;
 
   /// Emit the ABI-specific virtual destructor call.
   virtual RValue EmitVirtualDestructorCall(CodeGenFunction &CGF,

@@ -42,13 +42,13 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
     AutoreleaseResult(false), BlockInfo(0), BlockPointer(0),
     LambdaThisCaptureField(0), NormalCleanupDest(0), NextCleanupDestIndex(1),
     FirstBlockInfo(0), EHResumeBlock(0), ExceptionSlot(0), EHSelectorSlot(0),
-    DebugInfo(0), DisableDebugInfo(false), CalleeWithThisReturn(0),
-    DidCallStackSave(false),
+    DebugInfo(0), DisableDebugInfo(false), DidCallStackSave(false),
     IndirectBranch(0), SwitchInsn(0), CaseRangeBlock(0), UnreachableBlock(0),
-    CXXABIThisDecl(0), CXXABIThisValue(0), CXXThisValue(0),
+    CXXABIThisDecl(0), CXXABIThisAddrValue(0), CXXABIThisValue(0),
+    CXXThisAddrValue(0), CXXThisValue(0),
     CXXStructorImplicitParamDecl(0), CXXStructorImplicitParamValue(0),
-    OutermostConditional(0), CurLexicalScope(0), TerminateLandingPad(0),
-    TerminateHandler(0), TrapBB(0) {
+    OutermostConditional(0), CurLexicalScope(0),
+    TerminateLandingPad(0), TerminateHandler(0), TrapBB(0) {
   if (!suppressNewContext)
     CGM.getCXXABI().getMangleContext().startNewFunction();
 
@@ -555,19 +555,37 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
                                         LambdaThisCaptureField);
       if (LambdaThisCaptureField) {
         // If this lambda captures this, load it.
-        QualType LambdaTagType =
+        llvm::Value *ABIThisPtr;
+        if (CGM.getCodeGenOpts().OptimizationLevel == 0)
+          ABIThisPtr = CXXABIThisValue;
+        else
+          ABIThisPtr = Builder.CreateLoad(CXXABIThisAddrValue);
+        
+        QualType LambdaType =
             getContext().getTagDeclType(LambdaThisCaptureField->getParent());
-        LValue LambdaLV = MakeNaturalAlignAddrLValue(CXXABIThisValue,
-                                                     LambdaTagType);
-        LValue ThisLValue = EmitLValueForField(LambdaLV,
-                                               LambdaThisCaptureField);
-        CXXThisValue = EmitLoadOfLValue(ThisLValue).getScalarVal();
+        LValue LambdaLV = MakeNaturalAlignAddrLValue(ABIThisPtr,
+                                                     LambdaType);
+        LValue LambdaThisLV = EmitLValueForField(LambdaLV,
+                                                 LambdaThisCaptureField);
+        RValue LambdaThisRV = EmitLoadOfLValue(LambdaThisLV);
+
+        QualType ThisType = LambdaThisCaptureField->getType();
+        CXXThisAddrValue = CreateMemTemp(ThisType,
+                                         "lambda.captured-this.addr");
+        LValue ThisLV = MakeNaturalAlignAddrLValue(CXXThisAddrValue,
+                                                   ThisType);
+        EmitStoreOfScalar(LambdaThisRV.getScalarVal(), ThisLV,
+                          /* isInitialization */ true);
+        // At -O0, a load of 'this' is cached
+        if (CGM.getCodeGenOpts().OptimizationLevel == 0)
+            CXXThisValue = Builder.CreateLoad(CXXThisAddrValue,
+                                              "lambda.captured-this");
       }
     } else {
-      // Not in a lambda; just use 'this' from the method.
-      // FIXME: Should we generate a new load for each use of 'this'?  The
-      // fast register allocator would be happier...
-      CXXThisValue = CXXABIThisValue;
+      CXXThisAddrValue = CXXABIThisAddrValue;
+      // At -O0, a load of 'this' is cached
+      if (CGM.getCodeGenOpts().OptimizationLevel == 0)
+          CXXThisValue = CXXABIThisValue;
     }
   }
 
@@ -644,10 +662,6 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   SourceRange BodyRange;
   if (Stmt *Body = FD->getBody()) BodyRange = Body->getSourceRange();
 
-  // CalleeWithThisReturn keeps track of the last callee inside this function
-  // that returns 'this'. Before starting the function, we set it to null.
-  CalleeWithThisReturn = 0;
-
   // Emit the standard function prologue.
   StartFunction(GD, ResTy, Fn, FnInfo, Args, BodyRange.getBegin());
 
@@ -699,9 +713,6 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
 
   // Emit the standard function epilogue.
   FinishFunction(BodyRange.getEnd());
-  // CalleeWithThisReturn keeps track of the last callee inside this function
-  // that returns 'this'. After finishing the function, we set it to null.
-  CalleeWithThisReturn = 0;
 
   // If we haven't marked the function nothrow through other means, do
   // a quick pass now to see if we can.

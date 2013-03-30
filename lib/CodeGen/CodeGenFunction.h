@@ -1148,10 +1148,6 @@ private:
   CGDebugInfo *DebugInfo;
   bool DisableDebugInfo;
 
-  /// If the current function returns 'this', use the field to keep track of
-  /// the callee that returns 'this'.
-  llvm::Value *CalleeWithThisReturn;
-
   /// DidCallStackSave - Whether llvm.stacksave has been called. Used to avoid
   /// calling llvm.stacksave for multiple VLAs in the same scope.
   bool DidCallStackSave;
@@ -1209,7 +1205,22 @@ private:
   /// CXXThisDecl - When generating code for a C++ member function,
   /// this will hold the implicit 'this' declaration.
   ImplicitParamDecl *CXXABIThisDecl;
+
+  /// CXXABIThisAddrValue - While generating code for a C++ member function,
+  /// or lambda body, this holds a local alloca for the implicit 'this'
+  llvm::Value *CXXABIThisAddrValue;
+
+  /// CXXABIThisAddrValue - This is a cached load of CXXABIThisAddrValue, only
+  /// used on optimization level 0
   llvm::Value *CXXABIThisValue;
+
+  /// CXXThisAddrValue - This is identical to CXXABIThisAddrValue for a C++
+  /// member function but holds a local alloca for the captured 'this' when
+  /// generating code for a lambda body which captures 'this'
+  llvm::Value *CXXThisAddrValue;
+
+  /// CXXThisAddrValue - This is a cached load of CXXThisAddrValue, only used
+  /// on optimization level 0
   llvm::Value *CXXThisValue;
 
   /// CXXStructorImplicitParamDecl - When generating code for a constructor or
@@ -1424,8 +1435,6 @@ public:
     return BlockPointer;
   }
 
-  void AllocateBlockCXXThisPointer(const CXXThisExpr *E);
-  void AllocateBlockDecl(const DeclRefExpr *E);
   llvm::Value *GetAddrOfBlockDecl(const VarDecl *var, bool ByRef);
   llvm::Type *BuildByRefType(const VarDecl *var);
 
@@ -1814,11 +1823,34 @@ public:
   std::pair<llvm::Value*,QualType> getVLASize(const VariableArrayType *vla);
   std::pair<llvm::Value*,QualType> getVLASize(QualType vla);
 
-  /// LoadCXXThis - Load the value of 'this'. This function is only valid while
-  /// generating code for an C++ member function.
-  llvm::Value *LoadCXXThis() {
-    assert(CXXThisValue && "no 'this' value for this function");
-    return CXXThisValue;
+  /// EmitLoadOfCXXThis - Load the value of 'this'. This function is only valid
+  /// while generating code for an C++ member function of a lambda capturing
+  /// 'this'
+  ///
+  /// At optimization level 0, a cached load is used instead of emitting a new
+  /// load, since the redudant loads will not be eliminated otherwise.
+  llvm::Value *EmitLoadOfCXXThis() {
+    if (CGM.getCodeGenOpts().OptimizationLevel == 0) {
+      assert(CXXThisValue && "no 'this' value for this function");
+      return CXXThisValue;
+    }
+    assert(CXXThisAddrValue && "no 'this.addr' value for this function");
+    llvm::LoadInst *Load = Builder.CreateLoad(CXXThisAddrValue);
+    return Load;
+  }
+
+  /// EmitStoreOfCXXThis - Store a value to 'this'. This is only valid while
+  /// generating code for a C++ member function or a body of a lambda capturing
+  /// 'this'. A value stored to 'this' must be the same as its original value;
+  /// storing to 'this' is only intended to allow tail calls of functions
+  /// returning 'this' and elision of 'this' save-restoring.
+  ///
+  /// At optimization level 0, this store is omitted since the address will
+  /// never be loaded from again
+  void EmitStoreOfCXXThis(llvm::Value *Value) {
+    assert(CXXThisAddrValue && "no 'this.addr' value for this function");
+    if (CGM.getCodeGenOpts().OptimizationLevel != 0)
+      Builder.CreateStore(Value, CXXThisAddrValue);
   }
 
   /// LoadCXXVTT - Load the VTT parameter to base constructors/destructors have

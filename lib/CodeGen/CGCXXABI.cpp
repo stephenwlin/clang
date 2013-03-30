@@ -132,9 +132,9 @@ void CGCXXABI::BuildThisParam(CodeGenFunction &CGF, FunctionArgList &params) {
 void CGCXXABI::EmitThisParam(CodeGenFunction &CGF) {
   /// Initialize the 'this' slot.
   assert(getThisDecl(CGF) && "no 'this' variable for function");
-  getThisValue(CGF)
-    = CGF.Builder.CreateLoad(CGF.GetAddrOfLocalVar(getThisDecl(CGF)),
-                             "this");
+  getThisAddrValue(CGF) = CGF.GetAddrOfLocalVar(getThisDecl(CGF));
+  if (CGM.getCodeGenOpts().OptimizationLevel == 0)
+    getThisValue(CGF) = CGF.Builder.CreateLoad(getThisAddrValue(CGF), "this");
 }
 
 void CGCXXABI::EmitReturnFromThunk(CodeGenFunction &CGF,

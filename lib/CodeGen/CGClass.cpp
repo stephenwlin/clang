@@ -344,8 +344,9 @@ namespace {
         cast<CXXMethodDecl>(CGF.CurCodeDecl)->getParent();
 
       const CXXDestructorDecl *D = BaseClass->getDestructor();
+      llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
       llvm::Value *Addr = 
-        CGF.GetAddressOfDirectBaseInCompleteClass(CGF.LoadCXXThis(),
+        CGF.GetAddressOfDirectBaseInCompleteClass(ThisPtr,
                                                   DerivedClass, BaseClass,
                                                   BaseIsVirtual);
       CGF.EmitCXXDestructorCall(D, Dtor_Base, BaseIsVirtual,
@@ -384,7 +385,7 @@ static void EmitBaseInitializer(CodeGenFunction &CGF,
   assert(BaseInit->isBaseInitializer() &&
          "Must have base initializer!");
 
-  llvm::Value *ThisPtr = CGF.LoadCXXThis();
+  llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
   
   const Type *BaseType = BaseInit->getBaseClass();
   CXXRecordDecl *BaseClassDecl =
@@ -549,7 +550,7 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
   FieldDecl *Field = MemberInit->getAnyMember();
   QualType FieldType = Field->getType();
 
-  llvm::Value *ThisPtr = CGF.LoadCXXThis();
+  llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
   QualType RecordTy = CGF.getContext().getTypeDeclType(ClassDecl);
   LValue LHS = CGF.MakeNaturalAlignAddrLValue(ThisPtr, RecordTy);
 
@@ -810,7 +811,7 @@ namespace {
 
       CharUnits MemcpySize = getMemcpySize();
       QualType RecordTy = CGF.getContext().getTypeDeclType(ClassDecl);
-      llvm::Value *ThisPtr = CGF.LoadCXXThis();
+      llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
       LValue DestLV = CGF.MakeNaturalAlignAddrLValue(ThisPtr, RecordTy);
       LValue Dest = CGF.EmitLValueForFieldInitialization(DestLV, FirstField);
       llvm::Value *SrcPtr = CGF.Builder.CreateLoad(CGF.GetAddrOfLocalVar(SrcRec));
@@ -959,7 +960,7 @@ namespace {
     }
 
     void pushEHDestructors() {
-      llvm::Value *ThisPtr = CGF.LoadCXXThis();
+      llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
       QualType RecordTy = CGF.getContext().getTypeDeclType(ClassDecl);
       LValue LHS = CGF.MakeNaturalAlignAddrLValue(ThisPtr, RecordTy);
 
@@ -1249,8 +1250,9 @@ void CodeGenFunction::EmitDestructorBody(FunctionArgList &Args) {
   // destructor.  Do so.
   if (DtorType == Dtor_Deleting) {
     EnterDtorCleanups(Dtor, Dtor_Deleting);
+    llvm::Value *ThisPtr = EmitLoadOfCXXThis();
     EmitCXXDestructorCall(Dtor, Dtor_Complete, /*ForVirtualBase=*/false,
-                          /*Delegating=*/false, LoadCXXThis());
+                          /*Delegating=*/false, ThisPtr);
     PopCleanupBlock();
     return;
   }
@@ -1279,8 +1281,9 @@ void CodeGenFunction::EmitDestructorBody(FunctionArgList &Args) {
 
     if (!isTryBody &&
         CGM.getContext().getTargetInfo().getCXXABI().hasDestructorVariants()) {
+      llvm::Value *ThisPtr = EmitLoadOfCXXThis();
       EmitCXXDestructorCall(Dtor, Dtor_Base, /*ForVirtualBase=*/false,
-                            /*Delegating=*/false, LoadCXXThis());
+                            /*Delegating=*/false, ThisPtr);
       break;
     }
     // Fallthrough: act like we're in the base variant.
@@ -1342,7 +1345,8 @@ namespace {
     void Emit(CodeGenFunction &CGF, Flags flags) {
       const CXXDestructorDecl *Dtor = cast<CXXDestructorDecl>(CGF.CurCodeDecl);
       const CXXRecordDecl *ClassDecl = Dtor->getParent();
-      CGF.EmitDeleteCall(Dtor->getOperatorDelete(), CGF.LoadCXXThis(),
+      llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
+      CGF.EmitDeleteCall(Dtor->getOperatorDelete(), ThisPtr,
                          CGF.getContext().getTagDeclType(ClassDecl));
     }
   };
@@ -1365,7 +1369,8 @@ namespace {
       CGF.EmitBlock(callDeleteBB);
       const CXXDestructorDecl *Dtor = cast<CXXDestructorDecl>(CGF.CurCodeDecl);
       const CXXRecordDecl *ClassDecl = Dtor->getParent();
-      CGF.EmitDeleteCall(Dtor->getOperatorDelete(), CGF.LoadCXXThis(),
+      llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
+      CGF.EmitDeleteCall(Dtor->getOperatorDelete(), ThisPtr,
                          CGF.getContext().getTagDeclType(ClassDecl));
       CGF.Builder.CreateBr(continueBB);
 
@@ -1386,9 +1391,9 @@ namespace {
 
     void Emit(CodeGenFunction &CGF, Flags flags) {
       // Find the address of the field.
-      llvm::Value *thisValue = CGF.LoadCXXThis();
+      llvm::Value *ThisPtr = CGF.EmitLoadOfCXXThis();
       QualType RecordTy = CGF.getContext().getTagDeclType(field->getParent());
-      LValue ThisLV = CGF.MakeAddrLValue(thisValue, RecordTy);
+      LValue ThisLV = CGF.MakeAddrLValue(ThisPtr, RecordTy);
       LValue LV = CGF.EmitLValueForField(ThisLV, field);
       assert(LV.isSimple());
       
@@ -1666,11 +1671,9 @@ CodeGenFunction::EmitCXXConstructorCall(const CXXConstructorDecl *D,
   }
 
   // Non-trivial constructors are handled in an ABI-specific manner.
-  llvm::Value *Callee = CGM.getCXXABI().EmitConstructorCall(*this, D, Type,
-                            ForVirtualBase, Delegating, This, ArgBeg, ArgEnd);
-  if (CGM.getCXXABI().HasThisReturn(CurGD) &&
-      CGM.getCXXABI().HasThisReturn(GlobalDecl(D, Type)))
-     CalleeWithThisReturn = Callee;
+  CGM.getCXXABI().EmitConstructorCall(*this, D, Type,
+                                      ForVirtualBase, Delegating,
+                                      ReturnValueSlot(), This, ArgBeg, ArgEnd);
 }
 
 void
@@ -1736,7 +1739,8 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
   assert(I != E && "no parameters to constructor");
 
   // this
-  DelegateArgs.add(RValue::get(LoadCXXThis()), (*I)->getType());
+  llvm::Value *ThisPtr = EmitLoadOfCXXThis();
+  DelegateArgs.add(RValue::get(ThisPtr), (*I)->getType());
   ++I;
 
   // vtt
@@ -1762,9 +1766,6 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
   llvm::Value *Callee = CGM.GetAddrOfCXXConstructor(Ctor, CtorType);
   EmitCall(CGM.getTypes().arrangeCXXConstructorDeclaration(Ctor, CtorType),
            Callee, ReturnValueSlot(), DelegateArgs, Ctor);
-  if (CGM.getCXXABI().HasThisReturn(CurGD) &&
-      CGM.getCXXABI().HasThisReturn(GlobalDecl(Ctor, CtorType)))
-     CalleeWithThisReturn = Callee;
 }
 
 namespace {
@@ -1789,7 +1790,7 @@ CodeGenFunction::EmitDelegatingCXXConstructorCall(const CXXConstructorDecl *Ctor
                                                   const FunctionArgList &Args) {
   assert(Ctor->isDelegatingConstructor());
 
-  llvm::Value *ThisPtr = LoadCXXThis();
+  llvm::Value *ThisPtr = EmitLoadOfCXXThis();
 
   QualType Ty = getContext().getTagDeclType(Ctor->getParent());
   CharUnits Alignment = getContext().getTypeAlignInChars(Ty);
@@ -1831,9 +1832,6 @@ void CodeGenFunction::EmitCXXDestructorCall(const CXXDestructorDecl *DD,
   EmitCXXMemberCall(DD, SourceLocation(), Callee, ReturnValueSlot(), This,
                     VTT, getContext().getPointerType(getContext().VoidPtrTy),
                     0, 0);
-  if (CGM.getCXXABI().HasThisReturn(CurGD) &&
-      CGM.getCXXABI().HasThisReturn(GlobalDecl(DD, Type)))
-     CalleeWithThisReturn = Callee;
 }
 
 namespace {
@@ -1925,10 +1923,12 @@ CodeGenFunction::InitializeVTablePointer(BaseSubobject Base,
   llvm::Value *VirtualOffset = 0;
   CharUnits NonVirtualOffset = CharUnits::Zero();
   
+  llvm::Value *ThisPtr = EmitLoadOfCXXThis();
+
   if (CodeGenVTables::needsVTTParameter(CurGD) && NearestVBase) {
     // We need to use the virtual base offset offset because the virtual base
     // might have a different offset in the most derived class.
-    VirtualOffset = GetVirtualBaseClassOffset(LoadCXXThis(), VTableClass, 
+    VirtualOffset = GetVirtualBaseClassOffset(ThisPtr, VTableClass, 
                                               NearestVBase);
     NonVirtualOffset = OffsetFromNearestVBase;
   } else {
@@ -1937,7 +1937,7 @@ CodeGenFunction::InitializeVTablePointer(BaseSubobject Base,
   }
   
   // Apply the offsets.
-  llvm::Value *VTableField = LoadCXXThis();
+  llvm::Value *VTableField = ThisPtr;
   
   if (!NonVirtualOffset.isZero() || VirtualOffset)
     VTableField = ApplyNonVirtualAndVirtualOffset(*this, VTableField, 
