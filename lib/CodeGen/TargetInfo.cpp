@@ -55,6 +55,9 @@ const llvm::DataLayout &ABIInfo::getDataLayout() const {
   return CGT.getDataLayout();
 }
 
+const TargetInfo &ABIInfo::getTarget() const {
+  return CGT.getTarget();
+}
 
 void ABIArgInfo::dump() const {
   raw_ostream &OS = llvm::errs();
@@ -569,8 +572,7 @@ public:
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &CGM) const {
     // Darwin uses different dwarf register numbers for EH.
-    if (CGM.isTargetDarwin()) return 5;
-
+    if (CGM.getTarget().getTriple().isOSDarwin()) return 5;
     return 4;
   }
 
@@ -1038,7 +1040,7 @@ bool X86_32TargetCodeGenInfo::initDwarfEHRegSizeTable(
   // 8 is %eip.
   AssignToArrayRange(Builder, Address, Four8, 0, 8);
 
-  if (CGF.CGM.isTargetDarwin()) {
+  if (CGF.CGM.getTarget().getTriple().isOSDarwin()) {
     // 12-16 are st(0..4).  Not sure why we stop at 4.
     // These have size 16, which is sizeof(long double) on
     // platforms with 8-byte alignment for that type.
@@ -1163,7 +1165,7 @@ class X86_64ABIInfo : public ABIInfo {
   /// required strict binary compatibility with older versions of GCC
   /// may need to exempt themselves.
   bool honorsRevision0_98() const {
-    return !getContext().getTargetInfo().getTriple().isOSDarwin();
+    return !getTarget().getTriple().isOSDarwin();
   }
 
   bool HasAVX;
@@ -1387,8 +1389,7 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
       Current = Integer;
     } else if ((k == BuiltinType::Float || k == BuiltinType::Double) ||
                (k == BuiltinType::LongDouble &&
-                getContext().getTargetInfo().getTriple().getOS() ==
-                llvm::Triple::NaCl)) {
+                getTarget().getTriple().getOS() == llvm::Triple::NaCl)) {
       Current = SSE;
     } else if (k == BuiltinType::LongDouble) {
       Lo = X87;
@@ -1476,8 +1477,7 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
       Current = SSE;
     else if (ET == getContext().DoubleTy ||
              (ET == getContext().LongDoubleTy &&
-              getContext().getTargetInfo().getTriple().getOS() ==
-              llvm::Triple::NaCl))
+              getTarget().getTriple().getOS() == llvm::Triple::NaCl))
       Lo = Hi = SSE;
     else if (ET == getContext().LongDoubleTy)
       Current = ComplexX87;
@@ -2532,9 +2532,7 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty) const {
       return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
 
     // FIXME: mingw-w64-gcc emits 128-bit struct as i128
-    if (Size == 128 &&
-        getContext().getTargetInfo().getTriple().getOS()
-          == llvm::Triple::MinGW32)
+    if (Size == 128 && getTarget().getTriple().getOS() == llvm::Triple::MinGW32)
       return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(),
                                                           Size));
 
@@ -2964,8 +2962,7 @@ public:
   }
 
   bool isEABI() const {
-    StringRef Env =
-      getContext().getTargetInfo().getTriple().getEnvironmentName();
+    StringRef Env = getTarget().getTriple().getEnvironmentName();
     return (Env == "gnueabi" || Env == "eabi" ||
             Env == "android" || Env == "androideabi");
   }
@@ -3064,7 +3061,7 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
 /// Return the default calling convention that LLVM will use.
 llvm::CallingConv::ID ARMABIInfo::getLLVMDefaultCC() const {
   // The default calling convention that LLVM will infer.
-  if (getContext().getTargetInfo().getTriple().getEnvironmentName()=="gnueabihf")
+  if (getTarget().getTriple().getEnvironmentName()=="gnueabihf")
     return llvm::CallingConv::ARM_AAPCS_VFP;
   else if (isEABI())
     return llvm::CallingConv::ARM_AAPCS;
@@ -4556,7 +4553,7 @@ llvm::Value* MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
   int64_t TypeAlign = getContext().getTypeAlign(Ty) / 8;
   llvm::Type *PTy = llvm::PointerType::getUnqual(CGF.ConvertType(Ty));
   llvm::Value *AddrTyped;
-  unsigned PtrWidth = getContext().getTargetInfo().getPointerWidth(0);
+  unsigned PtrWidth = getTarget().getPointerWidth(0);
   llvm::IntegerType *IntTy = (PtrWidth == 32) ? CGF.Int32Ty : CGF.Int64Ty;
 
   if (TypeAlign > MinABIStackAlignInBytes) {
@@ -4817,7 +4814,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   if (TheTargetCodeGenInfo)
     return *TheTargetCodeGenInfo;
 
-  const llvm::Triple &Triple = getContext().getTargetInfo().getTriple();
+  const llvm::Triple &Triple = getTarget().getTriple();
   switch (Triple.getArch()) {
   default:
     return *(TheTargetCodeGenInfo = new DefaultTargetCodeGenInfo(Types));
@@ -4839,10 +4836,11 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   case llvm::Triple::thumb:
     {
       ARMABIInfo::ABIKind Kind = ARMABIInfo::AAPCS;
-      if (strcmp(getContext().getTargetInfo().getABI(), "apcs-gnu") == 0)
+      if (strcmp(getTarget().getABI(), "apcs-gnu") == 0)
         Kind = ARMABIInfo::APCS;
       else if (CodeGenOpts.FloatABI == "hard" ||
-               (CodeGenOpts.FloatABI != "soft" && Triple.getEnvironment()==llvm::Triple::GNUEABIHF))
+               (CodeGenOpts.FloatABI != "soft" &&
+                Triple.getEnvironment() == llvm::Triple::GNUEABIHF))
         Kind = ARMABIInfo::AAPCS_VFP;
 
       switch (Triple.getOS()) {
@@ -4907,7 +4905,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   }
 
   case llvm::Triple::x86_64: {
-    bool HasAVX = strcmp(getContext().getTargetInfo().getABI(), "avx") == 0;
+    bool HasAVX = strcmp(getTarget().getABI(), "avx") == 0;
 
     switch (Triple.getOS()) {
     case llvm::Triple::Win32:
@@ -4915,7 +4913,8 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     case llvm::Triple::Cygwin:
       return *(TheTargetCodeGenInfo = new WinX86_64TargetCodeGenInfo(Types));
     case llvm::Triple::NaCl:
-      return *(TheTargetCodeGenInfo = new NaClX86_64TargetCodeGenInfo(Types, HasAVX));
+      return *(TheTargetCodeGenInfo = new NaClX86_64TargetCodeGenInfo(Types,
+                                                                      HasAVX));
     default:
       return *(TheTargetCodeGenInfo = new X86_64TargetCodeGenInfo(Types,
                                                                   HasAVX));
