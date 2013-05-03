@@ -6,21 +6,16 @@
 // rdar://12818789
 
 // CHECK: define linkonce_odr [[A:%.*]] @_ZN11ObjectCacheC1Ev([[A]] %this) unnamed_addr
-// CHECK: [[THIS1:%.*]] = call [[A]] @_ZN11ObjectCacheC2Ev(
-// CHECK-NEXT: ret [[A]] [[THIS1]]
+// CHECK: {{%.*}} = call [[A]] @_ZN11ObjectCacheC2Ev(
 
 // CHECK: define linkonce_odr [[A:%.*]] @_ZN5TimerI11ObjectCacheEC1EPS0_MS0_FvPS1_E([[A]] %this
-// CHECK: [[THIS1:%.*]] = call [[A]] @_ZN5TimerI11ObjectCacheEC2EPS0_MS0_FvPS1_E(
-// CHECK-NEXT: ret [[A]] [[THIS1]]
+// CHECK: {{%.*}} = call [[A]] @_ZN5TimerI11ObjectCacheEC2EPS0_MS0_FvPS1_E(
 
 // CHECK: define linkonce_odr [[A:%.*]] @_ZN5TimerI11ObjectCacheED1Ev([[A]] %this) unnamed_addr
-// CHECK: [[THIS1:%.*]] = call [[A]] @_ZN5TimerI11ObjectCacheED2Ev(
-// CHECK-NEXT: ret [[A]] [[THIS1]]
+// CHECK: {{%.*}} = call [[A]] @_ZN5TimerI11ObjectCacheED2Ev(
 
 // CHECK: define linkonce_odr [[A:%.*]] @_ZN5TimerI11ObjectCacheED2Ev([[A]] %this) unnamed_addr
-// CHECK: [[THIS1:%.*]] = call [[B:%.*]] @_ZN9TimerBaseD2Ev(
-// CHECK-NEXT: [[THIS2:%.*]] = bitcast [[B]] [[THIS1]] to [[A]]
-// CHECK-NEXT: ret [[A]] [[THIS2]]
+// CHECK: {{%.*}} = call [[B:%.*]] @_ZN9TimerBaseD2Ev(
 
 class TimerBase {
 public:
