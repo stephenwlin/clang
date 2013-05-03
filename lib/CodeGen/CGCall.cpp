@@ -200,7 +200,10 @@ CodeGenTypes::arrangeCXXConstructorDeclaration(const CXXConstructorDecl *D,
                                                CXXCtorType ctorKind) {
   SmallVector<CanQualType, 16> argTypes;
   argTypes.push_back(GetThisType(Context, D->getParent()));
-  CanQualType resultType = Context.VoidTy;
+
+  GlobalDecl GD(D, ctorKind);
+  CanQualType resultType =
+    TheCXXABI.HasThisReturn(GD) ? argTypes.front() : Context.VoidTy;
 
   TheCXXABI.BuildConstructorSignature(D, ctorKind, resultType, argTypes);
 
@@ -225,7 +228,10 @@ CodeGenTypes::arrangeCXXDestructor(const CXXDestructorDecl *D,
                                    CXXDtorType dtorKind) {
   SmallVector<CanQualType, 2> argTypes;
   argTypes.push_back(GetThisType(Context, D->getParent()));
-  CanQualType resultType = Context.VoidTy;
+
+  GlobalDecl GD(D, dtorKind);
+  CanQualType resultType =
+    TheCXXABI.HasThisReturn(GD) ? argTypes.front() : Context.VoidTy;
 
   TheCXXABI.BuildDestructorSignature(D, dtorKind, resultType, argTypes);
 
